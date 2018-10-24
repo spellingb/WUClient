@@ -19,8 +19,11 @@
    The role this cmdlet belongs to
 .FUNCTIONALITY
    The functionality that best describes this cmdlet
+
 #>
-    [CmdletBinding()]
+#Requires -RunAsAdministrator 
+
+[CmdletBinding()]
     [Alias()]
     [OutputType([String])]
     Param
@@ -90,7 +93,7 @@
             }
             $keyval = $wukey.getvalue($KeyName)
             $WUKey.close()
-            If($keyval -eq $null){"Undefined"}else{$keyval}
+            If($null -eq $keyval){"Undefined"}else{$keyval}
         }#Get-WUKey
 
         Function Enum-Value($AU,$Day,$time){
@@ -164,7 +167,7 @@
                 $_
                 break
             }
-            $compresults = "" | Select $AllParams
+            $compresults = "" | Select-Object $AllParams
             $compresults.ComputerName = $Computer
             $compresults.TimeZone = (Get-WmiObject -Class win32_timezone -ComputerName "$computer").caption
             Foreach($WUValue in @('WUServer','WUStatusServer'))
@@ -189,5 +192,5 @@
     }
     End
     {
-       $results | select $SelectParams
+       $results | Select-Object $SelectParams
     }
