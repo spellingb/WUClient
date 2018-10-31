@@ -56,14 +56,28 @@
 
     Begin
     {
-        Function Set-WUKey($RegKey,[ValidateSet('WU','AU')]$SubKey,$KeyName,$KeyValue)
+        Function Set-WUKey
         {
+            [CmdletBinding()]
+            Param(
+                $RegKey,[ValidateSet('WU','AU')]$SubKey,
+                $KeyName,
+                $KeyValue,
+                $Computer)
             $WUKey = Switch($Subkey)
             {
                 "WU" {$regkey.OpenSubKey('Software\Policies\Microsoft\Windows\WindowsUpdate',$True)}
                 "AU" {$regkey.OpenSubKey('Software\Policies\Microsoft\Windows\WindowsUpdate\AU',$True)}
             }
-            $WUKey.SetValue($KeyName,$KeyValue,[Microsoft.Win32.RegistryValueKind]::String)
+            try {
+                Write-Verbose -Message ("{0}: Setting Key: {1} to value {2}" -f $Computer,$KeyName,$KeyValue)
+                $WUKey.SetValue($KeyName,$KeyValue,[Microsoft.Win32.RegistryValueKind]::String)
+                $WUKey.Close()
+                Write-Host -ForegroundColor Green ( "{0}: Set Property {1} to value {2}" -f $Computer,$KeyName,$KeyValue )
+                }
+            catch {
+                Write-Warning ("{0}: Unable to set Property {0} to value {1}" -f $Computer,$KeyName,$KeyValue)
+            }
         }#Set-WUKey
     }
     Process
@@ -77,7 +91,6 @@
                 $remoteregistrystatus = (Get-Service -Name RemoteRegistry -ComputerName "$computer").status
                 if($remoteregistrystatus -ne 'started')
                 {
-                    
                     Set-Service -Name RemoteRegistry -ComputerName $computer -StartupType Manual -Status Running
                 }
                 $Reg = [Microsoft.Win32.RegistryKey]::OpenRemoteBaseKey('LocalMachine', $computer)
@@ -87,7 +100,9 @@
                 {
                     #Build the required registry keys
                     $temp.CreateSubKey('WindowsUpdate\AU') | Out-Null
+                    $temp.Flush()
                 }
+                $temp.Close()
             }
             catch
             {
@@ -97,7 +112,7 @@
             }
 
             #Set WU Update Server
-            $WSUSEnv = $Reg.OpenSubKey('Software\Policies\Microsoft\Windows\WindowsUpdate',$True)
+            #$WSUSEnv = $Reg.OpenSubKey('Software\Policies\Microsoft\Windows\WindowsUpdate',$True)
             If ($PSBoundParameters['UpdateServer']) 
             {
                 foreach($wukey in @('WUServer','WUStatusServer'))
@@ -107,7 +122,7 @@
             }#UpdateServer
 
             #Set WSUS Client Configuration Options
-            $WSUSConfig = $Reg.OpenSubKey('Software\Policies\Microsoft\Windows\WindowsUpdate\AU',$True)
+            #$WSUSConfig = $Reg.OpenSubKey('Software\Policies\Microsoft\Windows\WindowsUpdate\AU',$True)
 
             If ($PSBoundParameters['AUOption']) 
             {
@@ -118,7 +133,7 @@
                     'DownloadAndInstall'{4}
                 }
                 Set-WUKey -RegKey $Reg -SubKey AU -KeyName AUOptions -KeyValue $STRauoption
-            }#AUOption 
+            }#AUOption
             If ($PSBoundParameters['ScheduledInstallDay']) 
             {
                 $STRInstallDay = switch($ScheduledInstallDay)
@@ -154,13 +169,43 @@
                     'Enable' {1}
                     'Disable' {0}
                 }
-                Set-WUKey -RegKey $Reg -SubKey AU -KeyName UseWUServer -KeyValue $strUseWUServer            
+                Set-WUKey -RegKey $Reg -SubKey AU -KeyName UseWUServer -KeyValue $strUseWUServer
+                Write-Verbose ("Setting Key: ")          
             }#UseWSUSServer
+            
+            #Restart WSUS Service and report in
+            try {
+                Get-Service -Name wuauserv -ComputerName $Computer -ErrorAction Stop | Restart-Service -Force -ErrorAction Stop
+            }
+            catch {
+                Write-Verbose ""
+                try {
+                    $stopwu = '{0}\system32\cmd.exe /C sc \\{1} stop wuauserv' -f $env:windir,$Computer
+                    $startwu = 'sc \\{0} start service' -f $Computer
+                    Write-Verbose ( "{0}: Attempting to stop Windows Update Service with command: {1}" -f $Computer,$stopwu )
+                    $stopwuresult = Invoke-Expression -Command $stopwu -ErrorAction Stop
+                    if($stopwuresult -match "^Access.is.denied\.$"){
+                        throw [System.Exception]::new(( "Access Denied to resource: WUAUSERV on Computer: {0}" -f $Compute ))
+                        }
+                    }
+                catch [System.Exception] {
+                    Write-Warning ( "Unable to Restart Windows Update (wuauserv) service on {0}." -f $Computer )
+                    Write-Warning ( "Error is {0}" -f $_.Exception )
+                }
+                Catch {
+                    Write-Warning ( "{0: Unhandled Exception}")
+                    $_.Exception | ForEach-Object{Write-Warning $_ -ErrorAction SilentlyContinue}
+                    $_.message | ForEach-Object{Write-Warning $_ -ErrorAction SilentlyContinue}
+                }
 
+                Write-Verbose ( "{0}: Attempting to start Windows Update Service with Command: {1}" -f $Computer,$startwu)
+                
+                Invoke-Expression -Command $startwu -ErrorAction Stop
+                Write-Warning ( "Unable to Restart Windows Update (wuauserv) service on {0}." -f $Computer )
+            }
+            
+            $Reg.Close()
         }#Foreach Computer
-
-
-
 
     }
     End

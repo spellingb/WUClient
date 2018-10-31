@@ -187,10 +187,7 @@
             $results.Add($compresults) | Out-Null
 
         }#Foreach Computer
-
-
-
-    }
+    }#Process
     End
     {
        $results | Select-Object $SelectParams
