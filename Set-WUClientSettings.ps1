@@ -73,6 +73,7 @@
         {
             try
             {
+                #Test connection to remote machine and get the 
                 $remoteregistrystatus = (Get-Service -Name RemoteRegistry -ComputerName "$computer").status
                 if($remoteregistrystatus -ne 'started')
                 {

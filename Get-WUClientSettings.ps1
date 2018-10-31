@@ -23,9 +23,9 @@
 #>
 #Requires -RunAsAdministrator 
 
-[CmdletBinding()]
+    [CmdletBinding()]
     [Alias()]
-    [OutputType([String])]
+    [OutputType()]
     Param
     (
         # Name of computer to connect to. Can be a collection of computers.
@@ -96,7 +96,7 @@
             If($null -eq $keyval){"Undefined"}else{$keyval}
         }#Get-WUKey
 
-        Function Enum-Value($AU,$Day,$time){
+        Function Convert-RegValue($AU,$Day,$time){
             switch($true)
             {
                 $PSBoundParameters.ContainsKey('au')
@@ -135,7 +135,7 @@
                 }
             }
 
-        }#Enum-Value
+        }#Convert-RegValue
 
     }#Begin
 
@@ -170,6 +170,7 @@
             $compresults = "" | Select-Object $AllParams
             $compresults.ComputerName = $Computer
             $compresults.TimeZone = (Get-WmiObject -Class win32_timezone -ComputerName "$computer").caption
+            
             Foreach($WUValue in @('WUServer','WUStatusServer'))
             {
                 $compresults.$wuvalue = Get-WUKey -RegKey $Reg -SubKey WU -KeyName $WUValue
@@ -180,9 +181,9 @@
                 $compresults.$AUValue =  Get-WUKey -RegKey $Reg -SubKey AU -KeyName $AUValue
             }
             
-            $compresults.AUOptions = Enum-Value -AU $compresults.AUOptions
-            $compresults.ScheduledInstallDay = Enum-Value -Day $compresults.ScheduledInstallDay
-            $compresults.ScheduledInstallTime = Enum-Value -time $compresults.ScheduledInstallTime
+            $compresults.AUOptions = Convert-RegValue -AU $compresults.AUOptions
+            $compresults.ScheduledInstallDay = Convert-RegValue -Day $compresults.ScheduledInstallDay
+            $compresults.ScheduledInstallTime = Convert-RegValue -time $compresults.ScheduledInstallTime
             $results.Add($compresults) | Out-Null
 
         }#Foreach Computer
