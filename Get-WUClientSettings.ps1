@@ -19,9 +19,7 @@
    The role this cmdlet belongs to
 .FUNCTIONALITY
    The functionality that best describes this cmdlet
-
 #>
-#Requires -RunAsAdministrator 
 
     [CmdletBinding()]
     [Alias()]
@@ -41,6 +39,14 @@
 
     Begin
     {
+        $me = [Security.Principal.WindowsIdentity]::GetCurrent()
+		$admincheck = (New-Object Security.Principal.WindowsPrincipal $me).IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator)
+
+		if(!$admincheck)
+		{
+            Write-Warning ( "{0}: Please Close Powershell and run as Administrator." -f $me.Name	)
+            exit
+		} #End If !$admincheck        
         $AUValues = @(
             'AUOptions',
             'ScheduledInstallDay',

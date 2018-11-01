@@ -56,6 +56,14 @@
 
     Begin
     {
+        $me = [Security.Principal.WindowsIdentity]::GetCurrent()
+		$admincheck = (New-Object Security.Principal.WindowsPrincipal $me).IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator)
+
+		if(!$admincheck)
+		{
+            Write-Warning ( "{0}: Please Close Powershell and run as Administrator." -f $me.Name	)
+            exit
+		} #End If !$admincheck        
         Function Set-WUKey
         {
             [CmdletBinding()]
