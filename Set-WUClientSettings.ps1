@@ -107,6 +107,7 @@
             catch
             {
                 Write-Warning ( "{0}: Unable to communicate to establish Remote Registy Connection." -f $Computer)
+                Write-Host -ForegroundColor Cyan "When encountering problems with this script, it is recommended to run from a Domain Controller, or from a VM with the same access as a domain controller. (I.E. RPC/ephermeral ports open to all target machines, permissions, etc)."
                 $_
                 break
             }
@@ -117,13 +118,11 @@
             {
                 foreach($wukey in @('WUServer','WUStatusServer'))
                 {
-                    Set-WUKey -RegKey $reg -SubKey WU -KeyName $wukey -KeyValue $UpdateServer
+                    Set-WUKey  -Computer $Computer -RegKey $reg -SubKey WU -KeyName $wukey -KeyValue $UpdateServer
                 }
             }#UpdateServer
 
             #Set WSUS Client Configuration Options
-            #$WSUSConfig = $Reg.OpenSubKey('Software\Policies\Microsoft\Windows\WindowsUpdate\AU',$True)
-
             If ($PSBoundParameters['AUOption']) 
             {
                 $STRauoption = switch($auoption)
@@ -132,7 +131,7 @@
                     'DownloadOnly'{3}
                     'DownloadAndInstall'{4}
                 }
-                Set-WUKey -RegKey $Reg -SubKey AU -KeyName AUOptions -KeyValue $STRauoption
+                Set-WUKey -Computer $Computer -RegKey $Reg -SubKey AU -KeyName AUOptions -KeyValue $STRauoption
             }#AUOption
             If ($PSBoundParameters['ScheduledInstallDay']) 
             {
@@ -147,11 +146,11 @@
                     'Friday'{6}
                     'Saturday'{7}
                 }
-                Set-WUKey -RegKey $Reg -SubKey AU -KeyName ScheduledInstallDay -KeyValue $STRInstallDay
+                Set-WUKey -Computer $Computer -RegKey $Reg -SubKey AU -KeyName ScheduledInstallDay -KeyValue $STRInstallDay
             }#ScheduleInstallDay
             If ($PSBoundParameters['ScheduledInstallTime']) 
             {
-                Set-WUKey -RegKey $Reg -SubKey AU -KeyName ScheduledInstallTime -KeyValue $ScheduledInstallTime
+                Set-WUKey -Computer $Computer -RegKey $Reg -SubKey AU -KeyName ScheduledInstallTime -KeyValue $ScheduledInstallTime
             }#ScheduleInstallTime
             If ($PSBoundParameters['AllowAutomaticUpdates']) 
             {
@@ -160,7 +159,7 @@
                     'Enable' {1}
                     'Disable' {0}
                 }
-                Set-WUKey -RegKey $Reg -SubKey AU -KeyName NoAutoUpdate -KeyValue $strNoAutoUpdate
+                Set-WUKey -Computer $Computer -RegKey $Reg -SubKey AU -KeyName NoAutoUpdate -KeyValue $strNoAutoUpdate
             }#AllowAutomaticUpdates
             If ($PSBoundParameters['UseWSUSServer']) 
             {
@@ -169,23 +168,28 @@
                     'Enable' {1}
                     'Disable' {0}
                 }
-                Set-WUKey -RegKey $Reg -SubKey AU -KeyName UseWUServer -KeyValue $strUseWUServer
+                Set-WUKey -Computer $Computer -RegKey $Reg -SubKey AU -KeyName UseWUServer -KeyValue $strUseWUServer
                 Write-Verbose ("Setting Key: ")          
             }#UseWSUSServer
             
-            #Restart WSUS Service and report in
+            #Restart WSUS Service
             try {
                 Get-Service -Name wuauserv -ComputerName $Computer -ErrorAction Stop | Restart-Service -Force -ErrorAction Stop
             }
             catch {
-                Write-Verbose ""
+                Write-Verbose ( "{0}: Unable to restart Windows Update Service through WinRM. Attempting to restart via RPC" )
                 try {
+                    #define expressions to run
                     $stopwu = '{0}\system32\cmd.exe /C sc \\{1} stop wuauserv' -f $env:windir,$Computer
-                    $startwu = 'sc \\{0} start service' -f $Computer
+                    $startwu = '{0}\system32\cmd.exe /C sc \\{1} start wuauserv' -f $env:windir,$Computer
+
+                    #attempt to stop, then start the wuauserv service
                     Write-Verbose ( "{0}: Attempting to stop Windows Update Service with command: {1}" -f $Computer,$stopwu )
-                    $stopwuresult = Invoke-Expression -Command $stopwu -ErrorAction Stop
-                    if($stopwuresult -match "^Access.is.denied\.$"){
-                        throw [System.Exception]::new(( "Access Denied to resource: WUAUSERV on Computer: {0}" -f $Compute ))
+                    $stopwuresult = Invoke-Expression -Command $stopwu -ErrorAction Stop -Verbose
+                    Write-Verbose ( "{0}: Attempting to start Windows Update Service with Command: {1}" -f $Computer,$startwu)
+                    $startwuresult = Invoke-Expression -Command $startwu -ErrorAction Stop
+                    if(($stopwuresult -or $startwuresult) -match "^Access.is.denied\.$"){
+                        throw [System.Exception]::new(( "Access Denied to resource: WUAUSERV on Computer: {0}" -f $Computer ))
                         }
                     }
                 catch [System.Exception] {
@@ -196,12 +200,10 @@
                     Write-Warning ( "{0: Unhandled Exception}")
                     $_.Exception | ForEach-Object{Write-Warning $_ -ErrorAction SilentlyContinue}
                     $_.message | ForEach-Object{Write-Warning $_ -ErrorAction SilentlyContinue}
+                    ""
+                    Write-Warning ( "Unable to Restart Windows Update (wuauserv) service on {0}." -f $Computer )
                 }
-
-                Write-Verbose ( "{0}: Attempting to start Windows Update Service with Command: {1}" -f $Computer,$startwu)
                 
-                Invoke-Expression -Command $startwu -ErrorAction Stop
-                Write-Warning ( "Unable to Restart Windows Update (wuauserv) service on {0}." -f $Computer )
             }
             
             $Reg.Close()
