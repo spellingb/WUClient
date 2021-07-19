@@ -1,29 +1,5 @@
-﻿<#
-.Synopsis
-   Gets Client Windows Update Settings
-.DESCRIPTION
-   Long description
-.EXAMPLE
-   Example of how to use this cmdlet
-.EXAMPLE
-   Another example of how to use this cmdlet
-.INPUTS
-   Inputs to this cmdlet (if any)
-.OUTPUTS
-   Output from this cmdlet (if any)
-.NOTES
-   General notes
-.COMPONENT
-   The component this cmdlet belongs to
-.ROLE
-   The role this cmdlet belongs to
-.FUNCTIONALITY
-   The functionality that best describes this cmdlet
-#>
-
+﻿Function Get-WUClientSetting {
     [CmdletBinding()]
-    [Alias()]
-    [OutputType()]
     Param
     (
         # Name of computer to connect to. Can be a collection of computers.
@@ -73,6 +49,11 @@
             'AlwaysAutoRebootAtScheduledTimeMinutes'
         )
 
+
+        $props= @{}
+        $AllParams | foreach {$props.Add( $_ ,'')}
+
+        
         $SelectParams = @(
             'ComputerName',
             'TimeZone'
@@ -153,10 +134,11 @@
         {
             try
             {
-                $remoteregistrystatus = (Get-Service -Name RemoteRegistry -ComputerName "$computer").status
+                $remoteregistrystatus = (Get-Service -Name RemoteRegistry -ComputerName "$computer" -ErrorAction Stop).status
                 if($remoteregistrystatus -ne 'started')
                 {
-                    Set-Service -Name RemoteRegistry -ComputerName $computer -StartupType Manual -Status "Running"
+                    Set-Service -Name RemoteRegistry -ComputerName $computer -StartupType Manual -ErrorAction Stop
+                    Set-Service -Name RemoteRegistry -ComputerName $Computer -Status Running -ErrorAction Stop
                 }
                 $Reg = [Microsoft.Win32.RegistryKey]::OpenRemoteBaseKey('LocalMachine', $computer)
                 $temp = $Reg.OpenSubKey('Software\Policies\Microsoft\Windows',$True)
@@ -166,14 +148,27 @@
                     #Build the required registry keys
                     $temp.CreateSubKey('WindowsUpdate\AU') | Out-Null
                 }
+                
+            }
+            catch [Microsoft.PowerShell.Commands.ServiceCommandException]
+            {
+                Write-Warning ( "{0}: Unable to Start {1} on Computer.`nReason:`n`t{2}" -f $Computer,$_.exception.servicename,$_.exception)
             }
             catch
             {
-                ( "{0}: Unable to communicate to establish Remote Registy Connection." -f $Computer) 
-                $_
+                write-warning ( "{0}: Unable to communicate to establish Remote Registy Connection." -f $Computer) 
+                
                 break
             }
-            $compresults = "" | Select-Object $AllParams
+            try {
+                $timezone = (Get-WmiObject -Class win32_timezone -ComputerName "$computer").caption
+            } catch {
+                $timezone = 'unavailable'
+            }
+
+            $compresults = New-Object psobject -Property $props
+
+            #$compresults = "" | Select-Object $AllParams
             $compresults.ComputerName = $Computer
             $compresults.TimeZone = (Get-WmiObject -Class win32_timezone -ComputerName "$computer").caption
             
@@ -196,5 +191,10 @@
     }#Process
     End
     {
-       $results | Select-Object $SelectParams
+        if($Detailed){
+            $results
+        } else {
+            $results | Select-Object $SelectParams
+        }
     }
+}
